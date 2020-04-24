@@ -1,39 +1,4 @@
 AWSTemplateFormatVersion: 2010-09-09
-Metadata:
-  'AWS::CloudFormation::Designer':
-    394f58fb-15e3-4baf-97af-94d8db09bf71:
-      size:
-        width: 60
-        height: 60
-      position:
-        x: 500
-        'y': 130
-      z: 0
-      embeds: []
-    73d34642-3944-44c6-ac8e-2d7a482c2f2d:
-      size:
-        width: 60
-        height: 60
-      position:
-        x: 340
-        'y': 130
-      z: 0
-      embeds: []
-    eee258e0-9c6e-411a-b761-2902f4c58fe5:
-      source:
-        id: c90408b2-839d-4766-b642-7bb0d4b1756f
-      target:
-        id: 73d34642-3944-44c6-ac8e-2d7a482c2f2d
-      z: 1
-    370192c5-ed0e-4c43-a97c-42b2ebb63a59:
-      size:
-        width: 60
-        height: 60
-      position:
-        x: 680
-        'y': 130
-      z: 0
-      embeds: []
 Resources:
   IAMRoleCodePipeline:
     Type: 'AWS::IAM::Role'
@@ -46,43 +11,71 @@ Resources:
                 - codepipeline.amazonaws.com
             Action:
               - 'sts:AssumeRole'
-      Path: /
       Policies:
         - PolicyName: codepipeline-service
           PolicyDocument:
             Statement:
               - Action:
-                  - 'codebuild:*'
-                Resource: '*'
-                Effect: Allow
-              - Action:
-                  - 's3:GetObject'
-                  - 's3:GetObjectVersion'
-                  - 's3:GetBucketVersioning'
-                Resource: '*'
-                Effect: Allow
-              - Action:
-                  - 's3:PutObject'
-                Resource:
-                  - 'arn:aws:s3:::codepipeline*'
-                Effect: Allow
-              - Action:
                   - 's3:*'
+                  - 'codebuild:*'
                   - 'cloudformation:*'
+                  - 'elasticbeanstalk:*'
+                  - "autoscaling:*"
+                  - "elasticloadbalancing:*"
+                  - "sns:*"
+                  - "logs:*"
+                  - "ec2:*"
                   - 'iam:PassRole'
                 Resource: '*'
                 Effect: Allow
             Version: 2012-10-17
-    Metadata:
-      'AWS::CloudFormation::Designer':
-        id: 394f58fb-15e3-4baf-97af-94d8db09bf71
+  IAMRoleCodeBuild:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: codebuild-service
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Resource:
+                - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${CloudWatchLogGroup}
+                - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${CloudWatchLogGroup}:*
+                Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+            Version: 2012-10-17
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
   S3BucketPipeline:
     Type: 'AWS::S3::Bucket'
-    Metadata:
-      'AWS::CloudFormation::Designer':
-        id: 73d34642-3944-44c6-ac8e-2d7a482c2f2d
-  S3BucketOutput:
-    Type: 'AWS::S3::Bucket'
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Source:
+        Type: CODEPIPELINE
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: !Ref CodeBuildType
+        Image: !Ref CodeBuildImage
+        ComputeType: !Ref CodeBuildComputeType
+        EnvironmentVariables: []
+        PrivilegedMode: false
+      ServiceRole: !GetAtt IAMRoleCodeBuild.Arn
+      Name: !Sub ${AWS::StackName}-CodeBuildProject
+      TimeoutInMinutes: 10
+      LogsConfig:
+        CloudWatchLogs:
+          GroupName: !Ref CloudWatchLogGroup
+          Status: ENABLED
+          StreamName: !Ref CloudWatchLogStream
   CodePipeline:
     Type: 'AWS::CodePipeline::Pipeline'
     Properties:
@@ -108,6 +101,21 @@ Resources:
                 Branch: !Ref GitHubBranch
                 OAuthToken: !Ref GitHubToken
               RunOrder: 1
+        - Name: Build
+          Actions:
+          - Name: Build
+            ActionTypeId:
+              Category: Build
+              Owner: AWS
+              Provider: CodeBuild
+              Version: '1'
+            RunOrder: 1
+            Configuration:
+              ProjectName: !Ref CodeBuildProject
+            OutputArtifacts:
+            - Name: BuildArtifacts
+            InputArtifacts:
+            - Name: SourceArtifacts
         - Name: Deploy
           Actions:
           - Name: Artifact
@@ -115,37 +123,46 @@ Resources:
               Category: Deploy
               Owner: AWS
               Version: '1'
-              Provider: S3
+              Provider: ElasticBeanstalk
             InputArtifacts:
-            - Name: SourceArtifacts 
+            - Name: BuildArtifacts
             OutputArtifacts: []
             Configuration:
-              BucketName: !Ref S3BucketOutput
-              Extract: 'false'
-              ObjectKey: tempcodepipeline22
+              ApplicationName: !Ref ElasticBeanstalkApplication
+              EnvironmentName: !Ref ElasticBeanstalkEnvironment
             RunOrder: 1
-    Metadata:
-      'AWS::CloudFormation::Designer':
-        id: 370192c5-ed0e-4c43-a97c-42b2ebb63a59
-
 Parameters:
   GitHubUser:
     Type: String
     Description: GitHub User
-    Default: stelligent
   GitHubRepo:
     Type: String
     Description: GitHub Repo to pull from. Only the Name. not the URL
-    Default: devops-essentials
   GitHubBranch:
     Type: String
     Description: GitHub Branch
-    Default: master
   GitHubToken:
     NoEcho: true
     Type: String
-    Description: Secret
-
+  ElasticBeanstalkApplication:
+    Type: String
+  ElasticBeanstalkEnvironment:
+    Type: String
+  CodeBuildType:
+    Type: String
+    Default: LINUX_CONTAINER
+  CodeBuildImage:
+    Type: String
+    Default: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+  CodeBuildComputeType:
+    Type: String
+    Default: BUILD_GENERAL1_SMALL
+  CloudWatchLogGroup:
+    Type: String
+    Description: CodeBuild Log Group
+  CloudWatchLogStream:
+    Type: String
+    Description: CodeBuild Log Stream
 Outputs:
   PipelineUrl:
     Value: !Sub https://console.aws.amazon.com/codepipeline/home?region=${AWS::Region}#/view/${CodePipeline}
