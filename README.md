@@ -13,7 +13,7 @@ This repo include the followings:
 * Test the application in a codebuild container.
 * Deploy application only tests passes.
 
-# to create the elastic beanstalk application and environment, and get the application and environment Ids
+# Create the elastic beanstalk application and environment, and get the application and environment Ids
 ```
 aws cloudformation deploy --stack-name <elastic beanstalk stack name> --template-file elasticBeanStalk_setup.yml \
         --capabilities CAPABILITY_IAM \
@@ -25,7 +25,7 @@ aws cloudformation deploy --stack-name <elastic beanstalk stack name> --template
 aws cloudformation describe-stacks --stack-name <stack_name> | jq ".Stacks[0].Outputs[]"
 ```
 
-# to create the codepipeline
+# Create the codepipeline
 ```
 aws cloudformation deploy --stack-name <codepipeline stack name> --template-file codepipeline_template.yml \
         --capabilities CAPABILITY_IAM \
@@ -34,8 +34,8 @@ aws cloudformation deploy --stack-name <codepipeline stack name> --template-file
         GitHubRepo=<repo> \
         GitHubBranch=<branch> \
         GitHubToken=<personal token> \
-        ElasticBeanstalkApplication="application ID" \
-        ElasticBeanstalkEnvironment="environment ID" \
+        ElasticBeanstalkApplication="application ID from earlier step" \
+        ElasticBeanstalkEnvironment="environment ID from earlier step" \
         CloudWatchLogGroup=<codebuild log group> \
         CloudWatchLogStream=<codebuild log stream>
 ```
