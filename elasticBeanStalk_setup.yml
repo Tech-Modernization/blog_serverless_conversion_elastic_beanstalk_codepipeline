@@ -1,0 +1,226 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Elasticbeanstalk test template
+Parameters:
+  SolutionStackName:
+  #64bit Amazon Linux 2018.03 v4.14.1 running Node.js
+    Type: String
+    Default: ""
+  PlatformArn:
+    Type: String
+    Default: ""
+  NotificationEmail:
+    Type: String
+  EC2KeyName:
+    Type: String
+
+Resources:
+  S3BucketELBLog:
+    Type: 'AWS::S3::Bucket'
+  S3BucketELBLogBucketPolicy: 
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Ref S3BucketELBLog
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: arn:aws:iam::127311923021:root
+            Action: s3:PutObject
+            Resource: !Join
+              - ''
+              - - !GetAtt S3BucketELBLog.Arn
+                - /ELB/*
+          - Effect: Allow
+            Principal:
+              Service: delivery.logs.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Join
+              - ''
+              - - !GetAtt S3BucketELBLog.Arn
+                - /ELB/*
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+          - Effect: Allow
+            Principal:
+              Service: delivery.logs.amazonaws.com
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt S3BucketELBLog.Arn
+  IAMRoleElasticBeanstalkService:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - elasticbeanstalk.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+            Condition:
+              StringEquals:
+                sts:ExternalId: elasticbeanstalk
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkEnhancedHealth
+        - arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkService
+  IAMRoleElasticBeanstalkEC2:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Sid: ""
+            Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: dynamodb-table-access
+          PolicyDocument:
+            Statement:
+              - Sid: ListAndDescribe
+                Effect: Allow
+                Action:
+                - dynamodb:List*
+                - dynamodb:DescribeReservedCapacity*
+                - dynamodb:DescribeLimits
+                - dynamodb:DescribeTimeToLive
+                Resource: "*"
+              - Sid: SpecificTable
+                Effect: Allow
+                Action:
+                - dynamodb:BatchGet*
+                - dynamodb:DescribeStream
+                - dynamodb:DescribeTable
+                - dynamodb:Get*
+                - dynamodb:Query
+                - dynamodb:Scan
+                - dynamodb:BatchWrite*
+                - dynamodb:CreateTable
+                - dynamodb:Delete*
+                - dynamodb:Update*
+                - dynamodb:PutItem
+                Resource: !GetAtt CommentsTable.Arn
+            Version: 2012-10-17
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier
+        - arn:aws:iam::aws:policy/AWSElasticBeanstalkMulticontainerDocker
+        - arn:aws:iam::aws:policy/AWSElasticBeanstalkWorkerTier
+  IAMInstanceProfileEC2:
+    Type: AWS::IAM::InstanceProfile
+    Properties: 
+      Roles: 
+        - !Ref IAMRoleElasticBeanstalkEC2
+  Application:
+    Properties:
+      ApplicationVersions:
+        - Description: Version 1.0
+          SourceBundle:
+            S3Bucket: !Join
+              - '-'
+              - - elasticbeanstalk-samples
+                - !Ref 'AWS::Region'
+            S3Key: nodejs-sample.zip
+          VersionLabel: Initial Version
+      Description: Demo App
+    Type: AWS::ElasticBeanstalk::Application
+  Environment:
+    Properties:
+      ApplicationName: !Ref Application
+      Description: AWS Elastic Beanstalk Environment running Node.js Sample Application
+      PlatformArn: !Ref PlatformArn
+      SolutionStackName: !Ref SolutionStackName
+      VersionLabel: Initial Version
+      OptionSettings:
+        - Namespace: aws:elasticbeanstalk:command
+          OptionName: BatchSize
+          Value: '1'
+        - Namespace: aws:elasticbeanstalk:command
+          OptionName: BatchSizeType
+          Value: Fixed
+        - Namespace: aws:elasticbeanstalk:command
+          OptionName: DeploymentPolicy
+          Value: AllAtOnce
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: AWS_REGION
+          Value: !Ref 'AWS::Region'
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: DYNAMODB_TABLENAME
+          Value: !Ref CommentsTable
+        - Namespace: aws:autoscaling:trigger
+          OptionName: BreachDuration
+          Value: '2'
+        - Namespace: aws:autoscaling:trigger
+          OptionName: LowerThreshold
+          Value: '1'
+        - Namespace: aws:autoscaling:trigger
+          OptionName: MeasureName
+          Value: TargetResponseTime
+        - Namespace: aws:autoscaling:trigger
+          OptionName: Period
+          Value: '2'
+        - Namespace: aws:autoscaling:trigger
+          OptionName: Unit
+          Value: Seconds
+        - Namespace: aws:elasticbeanstalk:environment:process:default
+          OptionName: Port
+          Value: '8080'
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: EC2KeyName
+          Value: !Ref EC2KeyName
+        - Namespace: aws:autoscaling:trigger
+          OptionName: UpperThreshold
+          Value: '2'
+        - Namespace: aws:elasticbeanstalk:sns:topics
+          OptionName: Notification Endpoint
+          Value: !Ref NotificationEmail
+        - Namespace: aws:autoscaling:asg
+          OptionName: MaxSize
+          Value: '2'
+        - Namespace: aws:elbv2:loadbalancer
+          OptionName: AccessLogsS3Enabled
+          Value: true
+        - Namespace: aws:elbv2:loadbalancer
+          OptionName: AccessLogsS3Prefix
+          Value: ELB
+        - Namespace: aws:elbv2:loadbalancer
+          OptionName: AccessLogsS3Bucket
+          Value: !Ref S3BucketELBLog
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+          OptionName: StreamLogs
+          Value: true
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: ServiceRole
+          Value: !Ref IAMRoleElasticBeanstalkService
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: LoadBalancerType
+          Value: application
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: !Ref IAMInstanceProfileEC2
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs:health
+          OptionName: HealthStreamingEnabled
+          Value: true
+        - Namespace: aws:elasticbeanstalk:healthreporting:system
+          OptionName: SystemType
+          Value: enhanced
+    Type: AWS::ElasticBeanstalk::Environment
+
+
+  CommentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      KeySchema:
+        HashKeyElement: {AttributeName: Subject, AttributeType: S}
+        RangeKeyElement: {AttributeName: User, AttributeType: S}
+      ProvisionedThroughput: {ReadCapacityUnits: 1, WriteCapacityUnits: 1}
+Outputs:
+  ApplicationID:
+    Description: Logical ID of the Elastic Beanstalk Application
+    Value: !Ref Application
+  EnvironmentID:
+    Description: Logical ID of the Elastic Beanstalk Environment
+    Value: !Ref Environment
