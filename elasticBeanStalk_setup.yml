@@ -92,16 +92,14 @@ Resources:
               - Sid: SpecificTable
                 Effect: Allow
                 Action:
-                - dynamodb:BatchGet*
-                - dynamodb:DescribeStream
+                - dynamodb:BatchGetItem
+                - dynamodb:BatchWriteItem
                 - dynamodb:DescribeTable
                 - dynamodb:Get*
                 - dynamodb:Query
                 - dynamodb:Scan
-                - dynamodb:BatchWrite*
-                - dynamodb:CreateTable
-                - dynamodb:Delete*
-                - dynamodb:Update*
+                - dynamodb:DeleteItem
+                - dynamodb:UpdateItem
                 - dynamodb:PutItem
                 Resource: !GetAtt CommentsTable.Arn
             Version: 2012-10-17
@@ -109,6 +107,7 @@ Resources:
         - arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier
         - arn:aws:iam::aws:policy/AWSElasticBeanstalkMulticontainerDocker
         - arn:aws:iam::aws:policy/AWSElasticBeanstalkWorkerTier
+
   IAMInstanceProfileEC2:
     Type: AWS::IAM::InstanceProfile
     Properties: 
