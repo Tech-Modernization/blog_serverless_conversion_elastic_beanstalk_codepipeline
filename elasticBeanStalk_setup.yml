@@ -223,3 +223,6 @@ Outputs:
   EnvironmentID:
     Description: Logical ID of the Elastic Beanstalk Environment
     Value: !Ref Environment
+  EnvironmentURL:
+    Description: URL of the Elastic Beanstalk Environment
+    Value: !GetAtt Environment.EndpointURL 
